@@ -38,6 +38,24 @@ test('serves the allow-listed files with a restrictive content security policy',
   assert.equal(await head.text(), '');
 });
 
+test('serves every stylesheet and module the page loads', async (t) => {
+  const { origin } = await startServer(t);
+  const pending = ['/'];
+  const seen = new Set();
+  while (pending.length) {
+    const path = pending.pop();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const response = await fetch(`${origin}${path}`);
+    assert.equal(response.status, 200, `${path} should be served`);
+    const text = await response.text();
+    const base = new URL(path, origin);
+    const references = [...text.matchAll(/(?:href|src)="(\/[^"]+\.(?:css|js))"|from '(\.\/[^']+\.js)'/g)];
+    for (const [, absolute, relative] of references) pending.push(new URL(absolute ?? relative, base).pathname);
+  }
+  assert.deepEqual([...seen].sort(), ['/', '/src/app.js', '/src/core.js', '/src/session.js', '/src/styles.css']);
+});
+
 test('rejects unknown paths, malformed paths and other methods', async (t) => {
   const { origin } = await startServer(t);
   assert.equal((await fetch(`${origin}/server.mjs`)).status, 404);
