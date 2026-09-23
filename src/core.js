@@ -444,6 +444,32 @@ export function analyseBundle(bundleValue) {
   };
 }
 
+// Returns the shared segments that changed relative order: the fewest that must move to turn the
+// first bundle's order into the second's. Segments that keep their relative order form the longest
+// increasing run of first-bundle positions, taken in second-bundle order.
+function movedSegmentIds(firstById, secondSegments) {
+  const shared = secondSegments.filter(({ id }) => firstById.has(id));
+  const firstPositions = shared.map(({ id }) => firstById.get(id).position);
+  const tailValues = [];
+  const tailIndexes = [];
+  const previous = new Array(shared.length).fill(-1);
+  firstPositions.forEach((position, index) => {
+    let low = 0;
+    let high = tailValues.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (tailValues[middle] < position) low = middle + 1;
+      else high = middle;
+    }
+    tailValues[low] = position;
+    tailIndexes[low] = index;
+    previous[index] = low > 0 ? tailIndexes[low - 1] : -1;
+  });
+  const kept = new Set();
+  for (let index = tailIndexes.at(-1) ?? -1; index >= 0; index = previous[index]) kept.add(index);
+  return shared.filter((_, index) => !kept.has(index)).map(({ id }) => id);
+}
+
 export function compareBundles(firstValue, secondValue) {
   const first = analyseBundle(firstValue);
   const second = analyseBundle(secondValue);
@@ -456,8 +482,8 @@ export function compareBundles(firstValue, secondValue) {
     added: second.segments.filter(({ id }) => !firstById.has(id)).map(({ id }) => id),
     removed: first.segments.filter(({ id }) => !secondById.has(id)).map(({ id }) => id),
     changed: second.segments.filter((segment) => firstById.has(segment.id) && firstById.get(segment.id).contentFingerprint !== segment.contentFingerprint).map(({ id }) => id),
-    reordered: second.segments.filter((segment) => firstById.has(segment.id) && firstById.get(segment.id).position !== segment.position).map(({ id }) => id),
-    method: 'Segment identifiers, canonical content fingerprints and assembly positions; no model call or semantic judgement.'
+    reordered: movedSegmentIds(firstById, second.segments),
+    method: 'Segment identifiers, canonical content fingerprints and the relative order of shared segments (the fewest that must move); no model call or semantic judgement.'
   };
 }
 

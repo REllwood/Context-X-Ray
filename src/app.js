@@ -357,7 +357,7 @@ function openComparison() {
   const heading = document.createElement('h2');
   heading.textContent = 'Compare with another supplied bundle';
   const explanation = document.createElement('p');
-  explanation.textContent = 'Comparison uses segment identifiers, canonical fingerprints and assembly positions. It does not judge relevance or call a model.';
+  explanation.textContent = 'Comparison uses segment identifiers, canonical fingerprints and the relative order of shared segments. It does not judge relevance or call a model.';
   const label = document.createElement('label');
   label.htmlFor = 'comparison-source';
   label.textContent = 'Second bundle JSON';
