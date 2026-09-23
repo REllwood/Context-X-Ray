@@ -27,8 +27,8 @@ When a coding agent gives a bad answer, the cause is often what went into its co
 Requires Node.js 22 or newer. No `npm install` needed.
 
 ```sh
-git clone https://github.com/REllwood/context-xray.git
-cd context-xray
+git clone https://github.com/REllwood/ContextXRay.git
+cd ContextXRay
 npm start
 ```
 
