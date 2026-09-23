@@ -29,7 +29,7 @@ const fixture = {
       role: 'tool',
       source: 'package-lock.json',
       stage: 'repository retrieval',
-      content: 'fixture-lockfile\\nalpha@1.0.0 integrity sha512-example\\nbeta@2.0.0 integrity sha512-example\\ngamma@3.0.0 integrity sha512-example\\n',
+      content: 'fixture-lockfile\nalpha@1.0.0 integrity sha512-example\nbeta@2.0.0 integrity sha512-example\ngamma@3.0.0 integrity sha512-example\n',
       transformation: 'full generated file'
     },
     {
@@ -37,7 +37,7 @@ const fixture = {
       role: 'tool',
       source: 'retrieval:duplicate-lockfile',
       stage: 'repository retrieval',
-      content: 'fixture-lockfile\\nalpha@1.0.0 integrity sha512-example\\nbeta@2.0.0 integrity sha512-example\\ngamma@3.0.0 integrity sha512-example\\n',
+      content: 'fixture-lockfile\nalpha@1.0.0 integrity sha512-example\nbeta@2.0.0 integrity sha512-example\ngamma@3.0.0 integrity sha512-example\n',
       transformation: 'duplicated generated file'
     },
     {
@@ -61,7 +61,7 @@ const fixture = {
       role: 'tool',
       source: 'src/payment/processor.js',
       stage: 'repository retrieval',
-      content: 'export async function retryPayment() {\\n  const exampleToken = \"ghp_1234567890abcdefghijklmnop\";\\n  // [truncated]\\n',
+      content: 'export async function retryPayment() {\n  const exampleToken = "ghp_1234567890abcdefghijklmnop";\n  // [truncated]\n',
       transformation: 'character-limited excerpt',
       truncated: true,
       sensitivity: 'source code'
