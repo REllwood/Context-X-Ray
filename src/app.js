@@ -1,4 +1,5 @@
 import { analyseBundle, compareBundles, exportAnalysis, MAX_SOURCE_CHARACTERS, parseBundle } from './core.js';
+import { createAnalysisSession } from './session.js';
 
 const fixture = {
   version: 1,
@@ -91,11 +92,9 @@ const elements = {
   dialogContent: document.querySelector('#dialog-content')
 };
 
-let currentBundle = null;
-let currentAnalysis = null;
+const session = createAnalysisSession();
 let activeController = null;
 let readingController = null;
-let sourceRevision = 0;
 
 function setStatus(message, loading = false) {
   elements.status.textContent = message;
@@ -108,12 +107,10 @@ function setStatus(message, loading = false) {
 }
 
 function discardAnalysis(message) {
-  sourceRevision += 1;
+  session.discard();
   // Releasing the job as well as aborting it stops its handler from replacing this message.
   activeController?.abort();
   activeController = null;
-  currentBundle = null;
-  currentAnalysis = null;
   elements.analysis.hidden = true;
   elements.empty.hidden = false;
   elements.compare.disabled = true;
@@ -141,7 +138,7 @@ async function analyse() {
   activeController?.abort();
   const controller = new AbortController();
   activeController = controller;
-  const revision = sourceRevision;
+  const ticket = session.begin();
   try {
     await delay(controller.signal, 'normalising included segments');
     const bundle = parseBundle(elements.source.value);
@@ -149,17 +146,15 @@ async function analyse() {
     await delay(controller.signal, 'indexing exact and near duplicates');
     await delay(controller.signal, 'checking truncation, references and secret patterns');
     const result = analyseBundle(bundle);
-    if (controller.signal.aborted || revision !== sourceRevision) {
+    if (controller.signal.aborted || !session.commit(ticket, bundle, result)) {
       throw new DOMException('Cancelled', 'AbortError');
     }
-    currentBundle = bundle;
-    currentAnalysis = result;
     renderAnalysis(result);
     setStatus(`Analysis complete: ${result.segments.length} segments and ${result.totals.estimatedTokens.toLocaleString('en-AU')} labelled estimated tokens.`);
   } catch (error) {
     if (activeController !== controller) return;
     setStatus(error.name === 'AbortError'
-      ? currentAnalysis
+      ? session.analysis
         ? 'Analysis cancelled. Partial work was discarded and the prior complete report remains unchanged.'
         : 'Analysis cancelled. Partial work was discarded.'
       : `Analysis failed: ${error.message}`);
@@ -305,7 +300,7 @@ function download(content, extension, type) {
 }
 
 function openExport() {
-  if (!currentAnalysis) {
+  if (!session.analysis) {
     setStatus('No current analysis is available to export. Analyse the current bundle first.');
     return;
   }
@@ -329,18 +324,11 @@ function openExport() {
       activeController?.abort();
       const controller = new AbortController();
       activeController = controller;
-      const revision = sourceRevision;
-      const analysis = currentAnalysis;
+      const ticket = session.begin();
       try {
         await delay(controller.signal, `preparing ${format} export`);
-        if (
-          revision !== sourceRevision ||
-          analysis === null ||
-          analysis !== currentAnalysis
-        ) {
-          throw new DOMException('Cancelled', 'AbortError');
-        }
-        const output = exportAnalysis(analysis, format, { includeExcerpts: elements.includeExcerpts.checked });
+        if (!ticket.analysis || !session.isCurrent(ticket)) throw new DOMException('Cancelled', 'AbortError');
+        const output = exportAnalysis(ticket.analysis, format, { includeExcerpts: elements.includeExcerpts.checked });
         download(output, extension, type);
         setStatus(`${format} export prepared locally.`);
       } catch (error) {
@@ -357,7 +345,7 @@ function openExport() {
 }
 
 function openComparison() {
-  if (!currentBundle) {
+  if (!session.bundle) {
     setStatus('No current analysis is available to compare. Analyse the current bundle first.');
     return;
   }
@@ -378,22 +366,15 @@ function openComparison() {
   button.textContent = 'Compare included bundles';
   const output = document.createElement('div');
   output.className = 'comparison-output';
-  const sourceBundle = currentBundle;
-  const revision = sourceRevision;
+  const ticket = session.begin();
   button.addEventListener('click', async () => {
     activeController?.abort();
     const controller = new AbortController();
     activeController = controller;
     try {
       await delay(controller.signal, 'normalising and comparing both bundles');
-      if (
-        revision !== sourceRevision ||
-        sourceBundle === null ||
-        sourceBundle !== currentBundle
-      ) {
-        throw new DOMException('Cancelled', 'AbortError');
-      }
-      const comparison = compareBundles(sourceBundle, parseBundle(textarea.value));
+      if (!ticket.bundle || !session.isCurrent(ticket)) throw new DOMException('Cancelled', 'AbortError');
+      const comparison = compareBundles(ticket.bundle, parseBundle(textarea.value));
       output.replaceChildren();
       const summary = document.createElement('p');
       summary.textContent = `Estimated token delta: ${comparison.estimatedTokenDelta >= 0 ? '+' : ''}${comparison.estimatedTokenDelta}. Added: ${comparison.added.join(', ') || 'none'}. Removed: ${comparison.removed.join(', ') || 'none'}. Changed: ${comparison.changed.join(', ') || 'none'}. Reordered: ${comparison.reordered.join(', ') || 'none'}.`;

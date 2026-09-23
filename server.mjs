@@ -20,6 +20,7 @@ const publicFiles = new Map([
   ['/index.html', join(root, 'index.html')],
   ['/src/app.js', join(root, 'src', 'app.js')],
   ['/src/core.js', join(root, 'src', 'core.js')],
+  ['/src/session.js', join(root, 'src', 'session.js')],
   ['/src/styles.css', join(root, 'src', 'styles.css')]
 ]);
 
