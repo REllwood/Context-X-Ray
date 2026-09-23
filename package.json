@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/REllwood/ContextXRay.git"
+    "url": "git+https://github.com/REllwood/Context-X-Ray.git"
   },
-  "homepage": "https://github.com/REllwood/ContextXRay#readme",
+  "homepage": "https://github.com/REllwood/Context-X-Ray#readme",
   "bugs": {
-    "url": "https://github.com/REllwood/ContextXRay/issues"
+    "url": "https://github.com/REllwood/Context-X-Ray/issues"
   },
   "type": "module",
   "engines": {
