@@ -255,55 +255,76 @@ function canonicalContent(content) {
   return content.normalize('NFKC').toLocaleLowerCase('en-AU').replace(/\s+/gu, ' ').trim();
 }
 
-function fingerprint(content) {
+function fingerprint(canonical) {
   let hash = 2166136261;
-  for (const character of canonicalContent(content)) {
+  for (const character of canonical) {
     hash ^= character.codePointAt(0) ?? 0;
     hash = Math.imul(hash, 16777619);
   }
   return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-function shingles(content) {
-  const words = canonicalContent(content).match(/[\p{L}\p{N}_-]+/gu) ?? [];
+function shingles(canonical) {
+  const words = canonical.match(/[\p{L}\p{N}_-]+/gu) ?? [];
   const values = new Set();
   const width = words.length >= 3 ? 3 : 1;
   for (let index = 0; index <= words.length - width; index += 1) values.add(words.slice(index, index + width).join(' '));
   return values;
 }
 
-function similarity(left, right) {
-  if (left.size === 0 && right.size === 0) return 1;
-  let intersection = 0;
-  for (const item of left) if (right.has(item)) intersection += 1;
-  const union = new Set([...left, ...right]).size;
-  return union === 0 ? 0 : intersection / union;
-}
-
-function duplicateEvidence(segments) {
-  const exactMap = new Map();
+// `canonicalById` holds each segment's canonical text, computed once by analyseBundle.
+function duplicateEvidence(segments, canonicalById) {
+  const exactGroups = new Map();
   for (const segment of segments) {
-    if (!segment.content.trim()) continue;
-    const key = `${fingerprint(segment.content)}:${canonicalContent(segment.content).length}`;
-    if (!exactMap.has(key)) exactMap.set(key, []);
-    exactMap.get(key).push(segment.id);
+    const canonical = canonicalById.get(segment.id);
+    if (!canonical) continue;
+    const key = `${segment.contentFingerprint}:${canonical.length}`;
+    if (!exactGroups.has(key)) exactGroups.set(key, []);
+    exactGroups.get(key).push(segment.id);
   }
-  const exact = [...exactMap.values()].filter((ids) => ids.length > 1).map((segmentIds) => ({ segmentIds, similarityPercent: 100, method: 'canonical whitespace and case equality' }));
-  const exactPairs = new Set(exact.flatMap(({ segmentIds }) => segmentIds.flatMap((left, index) => segmentIds.slice(index + 1).map((right) => [left, right].sort().join('\0')))));
-  const candidates = segments.filter((segment) => canonicalContent(segment.content).length >= 40);
-  const shingleMap = new Map(candidates.map((segment) => [segment.id, shingles(segment.content)]));
+  const exactIds = [...exactGroups.values()].filter((ids) => ids.length > 1);
+  const exact = exactIds.map((segmentIds) => ({ segmentIds, similarityPercent: 100, method: 'canonical whitespace and case equality' }));
+  // Later exact copies share the first copy's shingles, so they add no near-duplicate evidence.
+  const laterExactCopies = new Set(exactIds.flatMap((ids) => ids.slice(1)));
+
+  // Each segment is compared only with earlier segments that share at least one shingle
+  // (found through an inverted index) and is linked to the most similar of them. This keeps
+  // the work and the number of findings proportional to the bundle rather than to every pair.
+  const indexed = [];
+  const segmentsByShingle = new Map();
+  const sharedCounts = new Uint32Array(segments.length);
   const near = [];
-  for (let leftIndex = 0; leftIndex < candidates.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < candidates.length; rightIndex += 1) {
-      const left = candidates[leftIndex];
-      const right = candidates[rightIndex];
-      if (exactPairs.has([left.id, right.id].sort().join('\0'))) continue;
-      const value = similarity(shingleMap.get(left.id), shingleMap.get(right.id));
-      if (value >= nearDuplicateThreshold) near.push({
-        segmentIds: [left.id, right.id],
-        similarityPercent: Math.round(value * 1000) / 10,
-        method: 'Jaccard similarity over normalised three-word shingles'
+  for (const segment of segments) {
+    const canonical = canonicalById.get(segment.id);
+    if (canonical.length < 40 || laterExactCopies.has(segment.id)) continue;
+    const shingleSet = shingles(canonical);
+    if (shingleSet.size === 0) continue;
+    const touched = [];
+    for (const shingle of shingleSet) {
+      const earlierSegments = segmentsByShingle.get(shingle);
+      if (!earlierSegments) continue;
+      for (const earlier of earlierSegments) if (sharedCounts[earlier]++ === 0) touched.push(earlier);
+    }
+    let best = null;
+    for (const earlier of touched) {
+      const count = sharedCounts[earlier];
+      sharedCounts[earlier] = 0;
+      const value = count / (indexed[earlier].size + shingleSet.size - count);
+      if (value >= nearDuplicateThreshold && (!best || value > best.value || (value === best.value && earlier < best.earlier))) {
+        best = { earlier, value };
+      }
+    }
+    if (best) {
+      near.push({
+        segmentIds: [indexed[best.earlier].id, segment.id],
+        similarityPercent: Math.round(best.value * 1000) / 10,
+        method: 'Jaccard similarity over normalised three-word shingles, linking each segment to its most similar earlier segment'
       });
+    }
+    const position = indexed.push({ id: segment.id, size: shingleSet.size }) - 1;
+    for (const shingle of shingleSet) {
+      if (!segmentsByShingle.has(shingle)) segmentsByShingle.set(shingle, []);
+      segmentsByShingle.get(shingle).push(position);
     }
   }
   return { exact, near };
@@ -334,11 +355,12 @@ function truncationWarnings(segment) {
 
 export function analyseBundle(bundleValue) {
   const bundle = normalisedBundles.has(bundleValue) ? bundleValue : normaliseBundle(bundleValue);
+  const canonicalById = new Map(bundle.segments.map(({ id, content }) => [id, canonicalContent(content)]));
   const measuredSegments = bundle.segments.map((segment, position) => ({
     ...segment,
     position,
     measurement: measureContent(segment.content),
-    contentFingerprint: fingerprint(segment.content)
+    contentFingerprint: fingerprint(canonicalById.get(segment.id))
   }));
   const totals = measuredSegments.reduce((result, segment) => ({
     characters: result.characters + segment.measurement.characters,
@@ -361,7 +383,7 @@ export function analyseBundle(bundleValue) {
     type: 'unresolved reference',
     evidence: 'No included segment has this source path or segment id. The referenced file was not read.'
   }));
-  const duplicates = duplicateEvidence(measuredSegments);
+  const duplicates = duplicateEvidence(measuredSegments, canonicalById);
   const truncations = measuredSegments.flatMap(truncationWarnings);
   const secrets = measuredSegments.flatMap(secretWarnings);
   const oversizedGenerated = measuredSegments.filter((segment) =>
