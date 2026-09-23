@@ -18,14 +18,15 @@ async function standardInput() {
   let source = '';
   for await (const chunk of process.stdin) {
     source += chunk;
-    if (source.length > MAX_SOURCE_CHARACTERS) throw new RangeError(sourceLimitMessage);
+    // A character is at most two UTF-16 code units; parseBundle applies the exact limit.
+    if (source.length > MAX_SOURCE_CHARACTERS * 2) throw new RangeError(sourceLimitMessage);
   }
   return source;
 }
 
 async function fileInput(path) {
-  // UTF-8 needs at most three bytes per UTF-16 code unit, so a larger file cannot fit the limit.
-  if ((await stat(path)).size > MAX_SOURCE_CHARACTERS * 3) throw new RangeError(sourceLimitMessage);
+  // UTF-8 needs at most four bytes per character, so a larger file cannot fit the limit.
+  if ((await stat(path)).size > MAX_SOURCE_CHARACTERS * 4) throw new RangeError(sourceLimitMessage);
   return readFile(path, 'utf8');
 }
 

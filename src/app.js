@@ -422,8 +422,8 @@ elements.file.addEventListener('change', async () => {
   activeController = controller;
   setStatus('Loading: reading the explicitly selected bundle', true);
   try {
-    // UTF-8 needs at most three bytes per character, so a larger file cannot fit the limit.
-    if (file.size > MAX_SOURCE_CHARACTERS * 3) {
+    // UTF-8 needs at most four bytes per character, so a larger file cannot fit the limit.
+    if (file.size > MAX_SOURCE_CHARACTERS * 4) {
       throw new RangeError(`Bundle files are limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
     }
     const source = await file.text();

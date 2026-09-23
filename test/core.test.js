@@ -5,6 +5,7 @@ import {
   compareBundles,
   exportAnalysis,
   MAX_REFERENCES,
+  MAX_SEGMENT_CHARACTERS,
   MAX_SEGMENTS,
   measureContent,
   normaliseBundle,
@@ -34,6 +35,20 @@ test('character, byte and token estimates are deterministic and unmistakably lab
   });
   assert.equal(measureContent('é').bytes, 2);
   assert.match(analyseBundle(bundle).tokenMethod, /estimate, not an exact provider count/i);
+});
+
+test('characters are counted as code points in limits, offsets and excerpts', () => {
+  const emoji = '🙂';
+  assert.equal(normaliseBundle({ version: 1, segments: [{ id: 'e', content: emoji.repeat(MAX_SEGMENT_CHARACTERS) }] }).segments[0].content.length, MAX_SEGMENT_CHARACTERS * 2);
+  assert.throws(() => normaliseBundle({ version: 1, segments: [{ id: 'e', content: emoji.repeat(MAX_SEGMENT_CHARACTERS + 1) }] }), /exceeds/);
+
+  const token = `ghp_${'A'.repeat(36)}`;
+  const analysis = analyseBundle({ version: 1, segments: [{ id: 's', content: `${emoji}${emoji} ${token}` }] });
+  assert.deepEqual([analysis.findings.secretWarnings[0].offset, analysis.findings.secretWarnings[0].length], [3, 40]);
+
+  const excerptSource = analyseBundle({ version: 1, segments: [{ id: 'x', content: `${'a'.repeat(499)}${emoji}b` }] });
+  const [segment] = JSON.parse(exportAnalysis(excerptSource, 'json', { includeExcerpts: true })).segments;
+  assert.equal(segment.excerpt, `${'a'.repeat(499)}${emoji}`);
 });
 
 test('normalisation supports a common messages export and bounds unsupported shapes', () => {
