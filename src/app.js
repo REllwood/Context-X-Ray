@@ -244,6 +244,7 @@ function findingGroup(title, values, describe) {
   const list = document.createElement('ol');
   if (!values.length) {
     const item = document.createElement('li');
+    item.className = 'none-detected';
     item.textContent = 'None detected by this rule.';
     list.append(item);
   }
