@@ -244,6 +244,29 @@ test('references remain unresolved labels and secret findings omit matched text'
   assert.ok(analysis.findings.truncations.some(({ segmentId }) => segmentId === 'truncated'));
 });
 
+test('common credential formats are flagged without copying the matched text', () => {
+  // Built at run time so no credential-shaped literal appears in the source.
+  const fake = (prefix, length, character = 'A') => `${prefix}${character.repeat(length)}`;
+  const samples = {
+    'GitHub-style token pattern': fake('ghp_', 36),
+    'GitHub fine-grained token pattern': fake('github_pat_', 82),
+    'Anthropic API key pattern': fake('sk-ant-api03-', 93),
+    'OpenAI API key pattern': fake('sk-proj-', 48),
+    'Slack token pattern': fake('xoxb-', 40, '1'),
+    'Stripe live secret key pattern': fake('sk_live_', 24),
+    'Google API key pattern': fake('AIza', 35),
+    'Private key header': ['-----BEGIN', 'ENCRYPTED', 'PRIVATE', 'KEY-----'].join(' ')
+  };
+  const analysis = analyseBundle({
+    version: 1,
+    segments: Object.values(samples).map((content, index) => ({ id: `secret-${index}`, content: `value: ${content}\n` }))
+  });
+  assert.deepEqual(analysis.findings.secretWarnings.map(({ type }) => type), Object.keys(samples));
+  for (const value of Object.values(samples)) assert.equal(JSON.stringify(analysis.findings).includes(value), false);
+  const plain = analyseBundle({ version: 1, segments: [{ id: 'prose', content: 'The task-ant-colony and risk-management notes mention xoxo and AIza.' }] });
+  assert.deepEqual(plain.findings.secretWarnings, []);
+});
+
 test('default report export excludes content and matched secret text', () => {
   const analysis = analyseBundle(bundle);
   const report = exportAnalysis(analysis, 'json');

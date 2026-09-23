@@ -351,14 +351,21 @@ function duplicateEvidence(segments, canonicalById) {
   return { exact, near };
 }
 
+const secretDefinitions = [
+  { type: 'AWS access key identifier pattern', expression: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/gu },
+  { type: 'GitHub-style token pattern', expression: /\bgh[opusr]_[A-Za-z0-9]{20,255}\b/gu },
+  { type: 'GitHub fine-grained token pattern', expression: /\bgithub_pat_[A-Za-z0-9_]{22,255}/gu },
+  { type: 'Anthropic API key pattern', expression: /\bsk-ant-[A-Za-z0-9_-]{20,}/gu },
+  { type: 'OpenAI API key pattern', expression: /\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}\b)/gu },
+  { type: 'Slack token pattern', expression: /\bxox[abposr]-[A-Za-z0-9-]{10,}/gu },
+  { type: 'Stripe live secret key pattern', expression: /\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b/gu },
+  { type: 'Google API key pattern', expression: /\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/gu },
+  { type: 'Bearer credential pattern', expression: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/giu },
+  { type: 'Private key header', expression: /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/gu }
+];
+
 function secretWarnings(segment) {
-  const definitions = [
-    { type: 'AWS access key identifier pattern', expression: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/gu },
-    { type: 'GitHub-style token pattern', expression: /\bgh[opusr]_[A-Za-z0-9]{20,255}\b/gu },
-    { type: 'Bearer credential pattern', expression: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/giu },
-    { type: 'Private key header', expression: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/gu }
-  ];
-  return definitions.flatMap((definition) => [...segment.content.matchAll(definition.expression)].map((match) => ({
+  return secretDefinitions.flatMap((definition) => [...segment.content.matchAll(definition.expression)].map((match) => ({
     segmentId: segment.id,
     type: definition.type,
     offset: match.index ?? 0,
