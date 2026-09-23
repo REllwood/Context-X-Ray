@@ -23,29 +23,53 @@ const publicFiles = new Map([
   ['/src/styles.css', join(root, 'src', 'styles.css')]
 ]);
 
+const baseHeaders = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer'
+};
+
+function sendText(response, status, text, headers = {}) {
+  response.writeHead(status, { ...baseHeaders, 'Content-Type': 'text/plain; charset=utf-8', ...headers }).end(text);
+}
+
 const server = createServer(async (request, response) => {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    sendText(response, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
+    return;
+  }
+  let target;
   try {
-    const pathname = decodeURIComponent(new URL(request.url ?? '/', `http://${host}`).pathname);
-    const target = publicFiles.get(pathname);
-    if (!target) {
-      response.writeHead(404).end('Not found');
-      return;
-    }
-    response.writeHead(200, {
-      'Content-Type': types.get(extname(target)) ?? 'application/octet-stream',
-      'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer'
-    });
-    response.end(await readFile(target));
+    target = publicFiles.get(decodeURIComponent(new URL(request.url ?? '/', `http://${host}`).pathname));
+  } catch {
+    sendText(response, 400, 'Invalid request');
+    return;
+  }
+  if (!target) {
+    sendText(response, 404, 'Not found');
+    return;
+  }
+  // Read before writing headers, so a failed read can still send an error status.
+  let body;
+  try {
+    body = await readFile(target);
   } catch (error) {
     const missing = error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT';
-    response.writeHead(missing ? 404 : 400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    response.end(missing ? 'Not found' : 'Invalid request');
+    sendText(response, missing ? 404 : 500, missing ? 'Not found' : 'File could not be read');
+    return;
   }
+  response.writeHead(200, {
+    ...baseHeaders,
+    'Content-Type': types.get(extname(target)) ?? 'application/octet-stream',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  });
+  response.end(body);
 });
 
+server.on('error', (error) => {
+  console.error(`Context X-Ray could not start on http://${host}:${port}: ${error.message}`);
+  process.exitCode = 1;
+});
 server.listen(port, host, () => {
   const address = server.address();
   const activePort = address && typeof address === 'object' ? address.port : port;
