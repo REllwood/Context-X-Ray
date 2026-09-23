@@ -75,7 +75,8 @@ main { min-height: calc(100vh - 5rem); display: grid; grid-template-columns: min
 .finding-group h4 { margin: 0 0 .5rem; font-size: .82rem; }
 .finding-group ol { margin: 0; padding-left: 1.2rem; }
 .finding-group li { margin: .45rem 0; font-size: .74rem; line-height: 1.45; overflow-wrap: anywhere; }
-.finding-group button { border: 0; padding: 0; color: var(--cyan-dark); text-decoration: underline; background: transparent; font-size: inherit; }
+.finding-group li.none-detected { list-style: none; margin-left: -1.2rem; color: #5e6871; }
+.finding-group button { border: 0; padding: 0; color: var(--cyan-dark); text-decoration: underline; background: transparent; font-size: inherit; line-height: inherit; text-align: left; vertical-align: top; }
 .warning { color: var(--red); }
 dialog { width: min(58rem, calc(100% - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); padding: 1.5rem; }
 dialog::backdrop { background: rgba(21,32,43,.62); }
