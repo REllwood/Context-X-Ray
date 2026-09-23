@@ -10,12 +10,42 @@ const nearDuplicateThreshold = 0.72;
 // reuse them instead of validating them a second time.
 const normalisedBundles = new WeakSet();
 
+// Characters are Unicode code points throughout, so an emoji counts once in limits, totals,
+// offsets and excerpts alike.
+function characterCount(text) {
+  let count = text.length;
+  for (let index = 0; index < text.length - 1; index += 1) {
+    if (isSurrogatePair(text, index)) {
+      count -= 1;
+      index += 1;
+    }
+  }
+  return count;
+}
+
+function isSurrogatePair(text, index) {
+  const high = text.charCodeAt(index);
+  const low = text.charCodeAt(index + 1);
+  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
+}
+
+function firstCharacters(text, maximum) {
+  let end = 0;
+  for (let taken = 0; taken < maximum && end < text.length; taken += 1) end += isSurrogatePair(text, end) ? 2 : 1;
+  return text.slice(0, end);
+}
+
+// A string has at least as many UTF-16 code units as characters, so it is only counted when needed.
+function exceedsCharacters(text, maximum) {
+  return text.length > maximum && characterCount(text) > maximum;
+}
+
 function boundedText(value, label, maximum = 500, required = false) {
   if (typeof value !== 'string') {
     if (!required && value == null) return '';
     throw new TypeError(`${label} must be text.`);
   }
-  if (value.length > maximum) throw new RangeError(`${label} exceeds ${maximum.toLocaleString('en-AU')} characters.`);
+  if (exceedsCharacters(value, maximum)) throw new RangeError(`${label} exceeds ${maximum.toLocaleString('en-AU')} characters.`);
   if (required && !value.trim()) throw new RangeError(`${label} cannot be empty.`);
   return value.replace(/\0/gu, '\uFFFD');
 }
@@ -204,7 +234,7 @@ export function normaliseBundle(value) {
   for (const segment of segments) {
     if (ids.has(segment.id)) throw new RangeError(`Duplicate segment id: ${segment.id}`);
     ids.add(segment.id);
-    totalCharacters += segment.content.length;
+    totalCharacters += characterCount(segment.content);
   }
   if (totalCharacters > MAX_TOTAL_CHARACTERS) throw new RangeError(`Included content is limited to ${MAX_TOTAL_CHARACTERS.toLocaleString('en-AU')} characters.`);
   const references = new Map();
@@ -249,7 +279,7 @@ function deepFreeze(value) {
 
 export function parseBundle(source) {
   if (typeof source !== 'string') throw new TypeError('Bundle source must be text.');
-  if (source.length > MAX_SOURCE_CHARACTERS) throw new RangeError(`Bundle JSON is limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
+  if (exceedsCharacters(source, MAX_SOURCE_CHARACTERS)) throw new RangeError(`Bundle JSON is limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
   let value;
   try {
     value = JSON.parse(source);
@@ -261,7 +291,7 @@ export function parseBundle(source) {
 
 export function measureContent(contentValue) {
   const content = boundedText(contentValue, 'Measured content', MAX_SEGMENT_CHARACTERS);
-  const characters = [...content].length;
+  const characters = characterCount(content);
   const bytes = new TextEncoder().encode(content).length;
   return {
     characters,
@@ -368,8 +398,8 @@ function secretWarnings(segment) {
   return secretDefinitions.flatMap((definition) => [...segment.content.matchAll(definition.expression)].map((match) => ({
     segmentId: segment.id,
     type: definition.type,
-    offset: match.index ?? 0,
-    length: match[0].length,
+    offset: characterCount(segment.content.slice(0, match.index)),
+    length: characterCount(match[0]),
     limitation: 'Local pattern warning only; the matched text is excluded from this finding.'
   })));
 }
@@ -515,7 +545,7 @@ function safeReportObject(analysis, includeExcerpts) {
       transformation: segment.transformation,
       sensitivity: segment.sensitivity,
       measurement: segment.measurement,
-      ...(includeExcerpts ? { excerpt: segment.content.slice(0, 500) } : {})
+      ...(includeExcerpts ? { excerpt: firstCharacters(segment.content, 500) } : {})
     })),
     findings: analysis.findings,
     privacyBoundary: analysis.privacyBoundary,
