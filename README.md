@@ -41,6 +41,8 @@ Or run a report from the command line:
 node src/cli.js fixtures/repeated-context.json
 ```
 
+The report is JSON on standard output. Pipe a bundle in instead of naming a file, and add `--include-excerpts` to include the first 500 characters of each segment.
+
 ## Status
 
 v0.1 works on exported bundles. Next up are live instrumentation for agent hosts, and context checks you can run in CI.
