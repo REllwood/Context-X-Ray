@@ -83,6 +83,7 @@ const elements = {
   bars: document.querySelector('#source-bars'),
   segments: document.querySelector('#segments'),
   findings: document.querySelector('#findings'),
+  analyse: document.querySelector('#analyse-button'),
   compare: document.querySelector('#compare-button'),
   dialog: document.querySelector('#work-dialog'),
   dialogStatus: document.querySelector('#dialog-job-status'),
@@ -93,6 +94,7 @@ const elements = {
 let currentBundle = null;
 let currentAnalysis = null;
 let activeController = null;
+let readingController = null;
 let sourceRevision = 0;
 
 function setStatus(message, loading = false) {
@@ -107,7 +109,9 @@ function setStatus(message, loading = false) {
 
 function discardAnalysis(message) {
   sourceRevision += 1;
+  // Releasing the job as well as aborting it stops its handler from replacing this message.
   activeController?.abort();
+  activeController = null;
   currentBundle = null;
   currentAnalysis = null;
   elements.analysis.hidden = true;
@@ -155,9 +159,9 @@ async function analyse() {
   } catch (error) {
     if (activeController !== controller) return;
     setStatus(error.name === 'AbortError'
-      ? revision !== sourceRevision
-        ? 'Bundle source changed. The previous analysis was discarded; analyse the current source.'
-        : 'Analysis cancelled. Partial work was discarded and the prior complete report remains unchanged.'
+      ? currentAnalysis
+        ? 'Analysis cancelled. Partial work was discarded and the prior complete report remains unchanged.'
+        : 'Analysis cancelled. Partial work was discarded.'
       : `Analysis failed: ${error.message}`);
   } finally {
     if (activeController === controller) activeController = null;
@@ -296,7 +300,8 @@ function download(content, extension, type) {
   link.href = url;
   link.download = `context-xray-report.${extension}`;
   link.click();
-  URL.revokeObjectURL(url);
+  // Revoking straight after click() can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 function openExport() {
@@ -413,7 +418,7 @@ document.querySelector('#fixture-button').addEventListener('click', () => {
   elements.source.focus();
   setStatus('Synthetic repeated-lockfile bundle loaded. Analyse included content when ready.');
 });
-document.querySelector('#analyse-button').addEventListener('click', analyse);
+elements.analyse.addEventListener('click', analyse);
 elements.source.addEventListener('input', () => {
   discardAnalysis('Bundle source changed. The previous analysis and export were discarded.');
 });
@@ -423,21 +428,32 @@ elements.file.addEventListener('change', async () => {
   discardAnalysis('A different local bundle was selected. Reading it now.');
   const controller = new AbortController();
   activeController = controller;
+  // Until the file is in the text area, analysing would measure the previous bundle.
+  readingController = controller;
+  elements.analyse.disabled = true;
   setStatus('Loading: reading the explicitly selected bundle', true);
   try {
     // UTF-8 needs at most four bytes per character, so a larger file cannot fit the limit.
     if (file.size > MAX_SOURCE_CHARACTERS * 4) {
       throw new RangeError(`Bundle files are limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
     }
-    const source = await file.text();
-    if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const source = await new Promise((resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+      file.text().then(resolve, reject);
+    });
     elements.source.value = source;
     setStatus('Local bundle loaded as untrusted text. Analyse it to create measurements.');
   } catch (error) {
+    // Clearing the picker lets the same file be chosen again.
+    elements.file.value = '';
     if (activeController !== controller) return;
     setStatus(error.name === 'AbortError' ? 'Bundle reading cancelled.' : `Bundle reading failed: ${error.message}`);
   } finally {
     if (activeController === controller) activeController = null;
+    if (readingController === controller) {
+      readingController = null;
+      elements.analyse.disabled = false;
+    }
   }
 });
 elements.cancel.addEventListener('click', () => activeController?.abort());
