@@ -45,6 +45,23 @@ test('normalisation supports a common messages export and bounds unsupported sha
   assert.throws(() => normaliseBundle({ unknown: [] }), /Unsupported bundle shape/);
 });
 
+test('system prompts given as content blocks are measured, and unsupported ones are reported', () => {
+  const prompt = 'You are a careful coding agent. '.repeat(50);
+  const blocks = analyseBundle({
+    system: [{ type: 'text', text: prompt, cache_control: { type: 'ephemeral' } }, { type: 'text', text: 'Be brief.' }, { type: 'image', source: {} }],
+    messages: [{ role: 'user', content: 'hi' }]
+  });
+  assert.equal(blocks.adapter, 'system-plus-messages export');
+  assert.deepEqual(blocks.segments.map(({ id, role }) => [id, role]), [['system-1', 'system'], ['message-1', 'user']]);
+  assert.equal(blocks.segments[0].content, `${prompt}\n\nBe brief.`);
+  assert.deepEqual(blocks.findings.importWarnings, ['The system field has content that was not measured and is represented by metadata only: 1 image block.']);
+
+  const unsupported = analyseBundle({ system: { text: prompt }, messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(unsupported.adapter, 'chat messages export');
+  assert.deepEqual(unsupported.segments.map(({ id }) => id), ['message-1']);
+  assert.match(unsupported.findings.importWarnings[0], /^The system field .* 1 unsupported content field\.$/);
+});
+
 test('Anthropic-style tool use and tool results are measured and grouped by tool name', () => {
   const fileText = 'export function retryPayment() {}\n'.repeat(40);
   const analysis = analyseBundle({
