@@ -1,6 +1,10 @@
-export const MAX_SEGMENTS = 200;
-export const MAX_SEGMENT_CHARACTERS = 120_000;
-export const MAX_TOTAL_CHARACTERS = 1_000_000;
+// Sized for long agent transcripts: about a million estimated tokens of included content.
+export const MAX_SEGMENTS = 1_000;
+export const MAX_SEGMENT_CHARACTERS = 500_000;
+export const MAX_TOTAL_CHARACTERS = 4_000_000;
+export const MAX_REFERENCES = 1_000;
+// JSON escaping and unmeasured blocks (such as base64 images) make the source larger than its content.
+export const MAX_SOURCE_CHARACTERS = 10_000_000;
 const nearDuplicateThreshold = 0.72;
 // Bundles produced by normaliseBundle are frozen and remembered here, so analysis can
 // reuse them instead of validating them a second time.
@@ -188,7 +192,7 @@ export function normaliseBundle(value) {
   if (totalCharacters > MAX_TOTAL_CHARACTERS) throw new RangeError(`Included content is limited to ${MAX_TOTAL_CHARACTERS.toLocaleString('en-AU')} characters.`);
   const references = new Map();
   const addReference = (reference) => references.set(`${reference.fromSegmentId}\0${reference.path}`, reference);
-  boundedArray(value.references, 'Bundle references', 200).forEach((reference, index) => {
+  boundedArray(value.references, 'Bundle references', MAX_REFERENCES).forEach((reference, index) => {
     if (typeof reference === 'string') {
       addReference({ path: boundedText(reference, `Bundle reference ${index + 1}`, 500, true), fromSegmentId: '' });
       return;
@@ -202,8 +206,8 @@ export function normaliseBundle(value) {
   for (const segment of segments) segment.references.forEach((path) => addReference({ path, fromSegmentId: segment.id }));
   // Counted after de-duplication, so a saved normalised bundle (whose bundle-level list
   // already repeats its segment references) can be imported again.
-  if (references.size > 200) {
-    throw new RangeError('Combined bundle and segment references must contain at most 200 entries.');
+  if (references.size > MAX_REFERENCES) {
+    throw new RangeError(`Combined bundle and segment references must contain at most ${MAX_REFERENCES} entries.`);
   }
   const bundle = deepFreeze({
     version: 1,
@@ -228,7 +232,7 @@ function deepFreeze(value) {
 
 export function parseBundle(source) {
   if (typeof source !== 'string') throw new TypeError('Bundle source must be text.');
-  if (source.length > 1_250_000) throw new RangeError('Bundle JSON is limited to 1,250,000 characters.');
+  if (source.length > MAX_SOURCE_CHARACTERS) throw new RangeError(`Bundle JSON is limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
   let value;
   try {
     value = JSON.parse(source);

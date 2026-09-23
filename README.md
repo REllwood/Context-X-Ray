@@ -21,6 +21,7 @@ When a coding agent gives a bad answer, the cause is often what went into its co
 - Compares two bundles for the same task
 - Exports measurements with excerpts left out by default
 - Makes no model calls, and never opens files that are only referenced
+- Handles bundles of up to 1,000 segments and 4,000,000 characters of included content (about a million estimated tokens)
 
 ## Quick start
 
