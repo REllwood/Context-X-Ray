@@ -43,6 +43,67 @@ test('normalisation supports a common messages export and bounds unsupported sha
   assert.throws(() => normaliseBundle({ unknown: [] }), /Unsupported bundle shape/);
 });
 
+test('Anthropic-style tool use and tool results are measured and grouped by tool name', () => {
+  const fileText = 'export function retryPayment() {}\n'.repeat(40);
+  const analysis = analyseBundle({
+    messages: [
+      { role: 'user', content: 'Why does the retry fail?' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'private reasoning that must not be measured', signature: 'x' },
+          { type: 'text', text: 'Reading the file.' },
+          { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'src/payment.js' } }
+        ]
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: fileText },
+          { type: 'tool_result', tool_use_id: 'toolu_missing', content: [{ type: 'text', text: 'second' }, { type: 'image', source: {} }], is_error: true }
+        ]
+      }
+    ]
+  });
+  assert.deepEqual(analysis.segments.map(({ id }) => id), [
+    'message-1',
+    'message-2',
+    'message-2:tool-call-1',
+    'message-3:tool-result-1',
+    'message-3:tool-result-2'
+  ]);
+  const byId = new Map(analysis.segments.map((segment) => [segment.id, segment]));
+  assert.equal(byId.get('message-2:tool-call-1').source, 'tool-call:read_file');
+  assert.equal(byId.get('message-2:tool-call-1').content, '{"path":"src/payment.js"}');
+  assert.equal(byId.get('message-3:tool-result-1').source, 'tool-result:read_file');
+  assert.equal(byId.get('message-3:tool-result-1').measurement.characters, fileText.length);
+  assert.equal(byId.get('message-3:tool-result-2').source, 'tool-result:unknown');
+  assert.match(byId.get('message-3:tool-result-2').transformation, /error/);
+  assert.ok(analysis.sources.some(({ source }) => source === 'tool-result:read_file'));
+  assert.equal(JSON.stringify(analysis).includes('private reasoning'), false);
+  assert.deepEqual(analysis.findings.importWarnings, [
+    'Message 2 has content that was not measured and is represented by metadata only: 1 thinking block.',
+    'Message 3 has content that was not measured and is represented by metadata only: 1 image block.'
+  ]);
+});
+
+test('OpenAI-style tool calls and tool messages are measured and grouped by tool name', () => {
+  const analysis = analyseBundle({
+    messages: [
+      { role: 'user', content: 'Find the retry code.' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'grep', arguments: '{"pattern":"retry"}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: 'src/payment.js:12: retryPayment()' }
+    ]
+  });
+  assert.deepEqual(analysis.segments.map(({ id, source, stage }) => [id, source, stage]), [
+    ['message-1', 'message:1', 'conversation'],
+    ['message-2:tool-call-1', 'tool-call:grep', 'tool call'],
+    ['message-3', 'tool-result:grep', 'tool result']
+  ]);
+  assert.equal(analysis.segments[1].content, '{"pattern":"retry"}');
+  assert.deepEqual(analysis.findings.importWarnings, []);
+});
+
 test('rejects reference overflow rather than silently dropping evidence', () => {
   assert.throws(
     () => normaliseBundle({

@@ -25,18 +25,111 @@ function boundedArray(value, label, maximum, optional = true) {
   return value;
 }
 
-function messageContent(value, warnings, label) {
+const textBlockTypes = new Set(['text', 'input_text', 'output_text']);
+const toolCallBlockTypes = new Set(['tool_use', 'server_tool_use']);
+
+function isTextBlock(block) {
+  return block && typeof block === 'object' && textBlockTypes.has(block.type) && typeof block.text === 'string';
+}
+
+function serialised(value) {
   if (typeof value === 'string') return value;
-  if (!Array.isArray(value)) {
-    warnings.push(`${label} has an unsupported content field; it was represented as empty metadata.`);
+  return value == null ? '' : JSON.stringify(value);
+}
+
+// Text blocks are joined; anything else is counted in `skipped` so it can be reported.
+function blockText(content, skipped) {
+  if (typeof content === 'string') return content;
+  if (content == null) return '';
+  if (!Array.isArray(content)) {
+    skipped.set('unsupported content field', (skipped.get('unsupported content field') ?? 0) + 1);
     return '';
   }
-  const textParts = [];
-  for (const item of value) {
-    if (item && typeof item === 'object' && item.type === 'text' && typeof item.text === 'string') textParts.push(item.text);
-    else warnings.push(`${label} contains a non-text content block that was represented by metadata only.`);
+  const parts = [];
+  for (const block of content) {
+    if (isTextBlock(block)) parts.push(block.text);
+    else {
+      const type = block && typeof block === 'object' && typeof block.type === 'string' ? `${block.type} block` : 'unrecognised block';
+      skipped.set(type, (skipped.get(type) ?? 0) + 1);
+    }
   }
-  return textParts.join('\n\n');
+  return parts.join('\n\n');
+}
+
+// Adapts one exported message into segments: its text, plus one segment for each tool call
+// and tool result, so tool traffic is measured and grouped by tool name. Reasoning blocks,
+// images and other non-text blocks are counted in an import warning but not measured.
+function messageCandidates(message, index, warnings, toolNames) {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) throw new TypeError(`Message ${index + 1} must be an object.`);
+  const id = message.id ?? `message-${index + 1}`;
+  const skipped = new Map();
+  const textBlocks = [];
+  const toolSegments = [];
+  const toolCounts = { 'tool-call': 0, 'tool-result': 0 };
+  const addTool = (kind, fields) => {
+    toolCounts[kind] += 1;
+    toolSegments.push({ id: `${id}:${kind}-${toolCounts[kind]}`, role: message.role ?? 'unknown', contentType: 'text/plain', ...fields });
+  };
+  const recordToolName = (toolId, name) => {
+    if (toolId != null) toolNames.set(String(toolId), name);
+  };
+
+  if (Array.isArray(message.content)) {
+    for (const block of message.content) {
+      if (isTextBlock(block)) textBlocks.push(block);
+      else if (block && typeof block === 'object' && toolCallBlockTypes.has(block.type)) {
+        const name = typeof block.name === 'string' && block.name ? block.name : 'unknown';
+        recordToolName(block.id, name);
+        addTool('tool-call', {
+          source: `tool-call:${name}`,
+          stage: 'tool call',
+          content: serialised(block.input ?? {}),
+          transformation: `tool input from ${block.type} block, serialised as JSON`
+        });
+      } else if (block && typeof block === 'object' && block.type === 'tool_result') {
+        const name = toolNames.get(String(block.tool_use_id)) ?? 'unknown';
+        addTool('tool-result', {
+          source: `tool-result:${name}`,
+          stage: 'tool result',
+          content: blockText(block.content, skipped),
+          transformation: block.is_error === true ? 'tool_result block reporting an error' : 'tool_result block'
+        });
+      } else textBlocks.push(block);
+    }
+  }
+  if (Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
+      const name = typeof call?.function?.name === 'string' && call.function.name ? call.function.name : 'unknown';
+      recordToolName(call?.id, name);
+      addTool('tool-call', {
+        source: `tool-call:${name}`,
+        stage: 'tool call',
+        content: serialised(call?.function?.arguments),
+        transformation: 'tool_calls entry arguments'
+      });
+    }
+  }
+
+  const text = blockText(Array.isArray(message.content) ? textBlocks : message.content, skipped);
+  const isToolMessage = message.role === 'tool' && message.tool_call_id != null;
+  const toolName = isToolMessage ? toolNames.get(String(message.tool_call_id)) ?? message.name ?? 'unknown' : null;
+  const candidates = [];
+  if (text || toolSegments.length === 0) {
+    candidates.push({
+      id,
+      role: message.role ?? 'unknown',
+      source: isToolMessage ? `tool-result:${toolName}` : message.name ? `message:${message.name}` : `message:${index + 1}`,
+      stage: isToolMessage ? 'tool result' : 'conversation',
+      contentType: 'text/plain',
+      content: text,
+      transformation: isToolMessage ? 'adapted from tool message' : 'adapted from message export'
+    });
+  }
+  if (skipped.size) {
+    const counts = [...skipped].map(([type, count]) => `${count} ${type}${count === 1 ? '' : 's'}`);
+    warnings.push(`Message ${index + 1} has content that was not measured and is represented by metadata only: ${counts.join(', ')}.`);
+  }
+  return [...candidates, ...toolSegments];
 }
 
 function segmentFromValue(candidate, index) {
@@ -72,21 +165,15 @@ export function normaliseBundle(value) {
     segments = value.segments.map(segmentFromValue);
   } else if (Array.isArray(value.messages)) {
     adapter = typeof value.system === 'string' ? 'system-plus-messages export' : 'chat messages export';
-    const messageSegments = value.messages.map((message, index) => {
-      if (!message || typeof message !== 'object') throw new TypeError(`Message ${index + 1} must be an object.`);
-      return segmentFromValue({
-        id: message.id ?? `message-${index + 1}`,
-        role: message.role ?? 'unknown',
-        source: message.name ? `message:${message.name}` : `message:${index + 1}`,
-        stage: 'conversation',
-        contentType: 'text/plain',
-        content: messageContent(message.content, warnings, `Message ${index + 1}`),
-        transformation: 'adapted from message export'
-      }, index + (typeof value.system === 'string' ? 1 : 0));
+    const candidates = typeof value.system === 'string'
+      ? [{ id: 'system-1', role: 'system', source: 'system', stage: 'instructions', content: value.system, transformation: 'adapted from system field' }]
+      : [];
+    const toolNames = new Map();
+    value.messages.forEach((message, index) => {
+      candidates.push(...messageCandidates(message, index, warnings, toolNames));
+      if (candidates.length > MAX_SEGMENTS) throw new RangeError(`Bundles are limited to ${MAX_SEGMENTS} segments.`);
     });
-    segments = typeof value.system === 'string'
-      ? [segmentFromValue({ id: 'system-1', role: 'system', source: 'system', stage: 'instructions', content: value.system, transformation: 'adapted from system field' }, 0), ...messageSegments]
-      : messageSegments;
+    segments = candidates.map(segmentFromValue);
   } else {
     throw new RangeError('Unsupported bundle shape. Supply bundle version 1 or an object with a messages array.');
   }
