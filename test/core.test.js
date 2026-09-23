@@ -176,6 +176,31 @@ test('exact and near duplicate evidence links exact segment identifiers', () => 
   assert.equal(nearAnalysis.findings.nearDuplicates[0].similarityPercent, 85.7);
 });
 
+test('near duplicates link each segment to its most similar earlier segment', () => {
+  const words = Array.from({ length: 60 }, (_, index) => `word${index}`);
+  const segments = Array.from({ length: 30 }, (_, index) => {
+    const variant = words.slice();
+    variant[index % 60] = `edit${index}`;
+    return { id: `s${index}`, content: variant.join(' ') };
+  });
+  const near = analyseBundle({ version: 1, segments }).findings.nearDuplicates;
+  assert.equal(near.length, 29);
+  near.forEach(({ segmentIds: [earlier, later] }) => {
+    assert.ok(Number(earlier.slice(1)) < Number(later.slice(1)));
+  });
+  const copies = analyseBundle({ version: 1, segments: [segments[0], { ...segments[0], id: 'copy' }, segments[1]] }).findings;
+  assert.deepEqual(copies.exactDuplicates[0].segmentIds, ['s0', 'copy']);
+  assert.deepEqual(copies.nearDuplicates.map(({ segmentIds }) => segmentIds), [['s0', 's1']]);
+});
+
+test('segments without words are not reported as near duplicates of each other', () => {
+  const analysis = analyseBundle({
+    version: 1,
+    segments: [{ id: 'rule', content: '='.repeat(45) }, { id: 'emoji', content: `${'🙂'.repeat(25)}${'!'.repeat(20)}` }]
+  });
+  assert.deepEqual(analysis.findings.nearDuplicates, []);
+});
+
 test('references remain unresolved labels and secret findings omit matched text', () => {
   const analysis = analyseBundle(bundle);
   assert.equal(analysis.findings.unresolvedReferences[0].path, '/workspace/not-included.js');
