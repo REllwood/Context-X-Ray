@@ -2,6 +2,9 @@ export const MAX_SEGMENTS = 200;
 export const MAX_SEGMENT_CHARACTERS = 120_000;
 export const MAX_TOTAL_CHARACTERS = 1_000_000;
 const nearDuplicateThreshold = 0.72;
+// Bundles produced by normaliseBundle are frozen and remembered here, so analysis can
+// reuse them instead of validating them a second time.
+const normalisedBundles = new WeakSet();
 
 function boundedText(value, label, maximum = 500, required = false) {
   if (typeof value !== 'string') {
@@ -96,29 +99,44 @@ export function normaliseBundle(value) {
     totalCharacters += segment.content.length;
   }
   if (totalCharacters > MAX_TOTAL_CHARACTERS) throw new RangeError(`Included content is limited to ${MAX_TOTAL_CHARACTERS.toLocaleString('en-AU')} characters.`);
-  const references = boundedArray(value.references, 'Bundle references', 200)
-    .map((reference, index) => {
-      if (typeof reference === 'string') return { path: boundedText(reference, `Bundle reference ${index + 1}`, 500, true), fromSegmentId: '' };
-      if (!reference || typeof reference !== 'object') throw new TypeError(`Bundle reference ${index + 1} must be text or an object.`);
-      return {
-        path: boundedText(reference.path, `Bundle reference ${index + 1} path`, 500, true),
-        fromSegmentId: boundedText(reference.fromSegmentId ?? '', `Bundle reference ${index + 1} source id`, 120)
-      };
+  const references = new Map();
+  const addReference = (reference) => references.set(`${reference.fromSegmentId}\0${reference.path}`, reference);
+  boundedArray(value.references, 'Bundle references', 200).forEach((reference, index) => {
+    if (typeof reference === 'string') {
+      addReference({ path: boundedText(reference, `Bundle reference ${index + 1}`, 500, true), fromSegmentId: '' });
+      return;
+    }
+    if (!reference || typeof reference !== 'object') throw new TypeError(`Bundle reference ${index + 1} must be text or an object.`);
+    addReference({
+      path: boundedText(reference.path, `Bundle reference ${index + 1} path`, 500, true),
+      fromSegmentId: boundedText(reference.fromSegmentId ?? '', `Bundle reference ${index + 1} source id`, 120)
     });
-  for (const segment of segments) segment.references.forEach((path) => references.push({ path, fromSegmentId: segment.id }));
-  if (references.length > 200) {
+  });
+  for (const segment of segments) segment.references.forEach((path) => addReference({ path, fromSegmentId: segment.id }));
+  // Counted after de-duplication, so a saved normalised bundle (whose bundle-level list
+  // already repeats its segment references) can be imported again.
+  if (references.size > 200) {
     throw new RangeError('Combined bundle and segment references must contain at most 200 entries.');
   }
-  const uniqueReferences = [...new Map(references.map((reference) => [`${reference.fromSegmentId}\0${reference.path}`, reference])).values()];
-  return {
+  const bundle = deepFreeze({
     version: 1,
     label: boundedText(value.label ?? 'Untitled context bundle', 'Bundle label', 160, true),
     adapter,
     tokeniser: 'estimate:utf8-bytes-divided-by-4:v1',
     segments,
-    references: uniqueReferences,
+    references: [...references.values()],
     importWarnings: warnings
-  };
+  });
+  normalisedBundles.add(bundle);
+  return bundle;
+}
+
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export function parseBundle(source) {
@@ -228,21 +246,7 @@ function truncationWarnings(segment) {
 }
 
 export function analyseBundle(bundleValue) {
-  const bundle = normaliseBundle(bundleValue);
-  if (
-    bundleValue?.version === 1
-    && bundleValue.tokeniser === 'estimate:utf8-bytes-divided-by-4:v1'
-    && typeof bundleValue.adapter === 'string'
-  ) {
-    bundle.adapter = boundedText(bundleValue.adapter, 'Bundle adapter', 120, true);
-    bundle.importWarnings = boundedArray(
-      bundleValue.importWarnings,
-      'Import warnings',
-      200
-    ).map((warning, index) =>
-      boundedText(warning, `Import warning ${index + 1}`, 500, true)
-    );
-  }
+  const bundle = normalisedBundles.has(bundleValue) ? bundleValue : normaliseBundle(bundleValue);
   const measuredSegments = bundle.segments.map((segment, position) => ({
     ...segment,
     position,
