@@ -206,6 +206,8 @@ function renderAnalysis(analysis) {
   for (const segment of analysis.segments) {
     const item = document.createElement('li');
     item.id = `segment-${segment.id}`;
+    // Focusable from script only, so following a finding moves keyboard and screen-reader focus here.
+    item.tabIndex = -1;
     const position = document.createElement('span');
     position.className = 'position';
     position.textContent = String(segment.position + 1).padStart(2, '0');
