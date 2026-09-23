@@ -277,6 +277,16 @@ test('bundle comparison reports additions, removals, changes and order without s
   const comparison = compareBundles(bundle, second);
   assert.ok(comparison.removed.includes('truncated'));
   assert.ok(comparison.changed.includes('task'));
-  assert.ok(comparison.reordered.includes('copy-a'));
+  assert.deepEqual(comparison.reordered, ['copy-a']);
   assert.match(comparison.method, /no model call or semantic judgement/i);
+});
+
+test('bundle comparison reports only segments whose relative order changed', () => {
+  const ordered = (ids) => ({ version: 1, segments: ids.map((id) => ({ id, content: `content for ${id}` })) });
+  const base = ordered(['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(compareBundles(base, ordered(['a', 'c', 'd', 'e'])).reordered, []);
+  assert.deepEqual(compareBundles(base, ordered(['new', 'a', 'b', 'c', 'd', 'e'])).reordered, []);
+  assert.deepEqual(compareBundles(base, ordered(['e', 'a', 'b', 'c', 'd'])).reordered, ['e']);
+  assert.deepEqual(compareBundles(base, ordered(['b', 'c', 'd', 'e', 'a'])).reordered, ['a']);
+  assert.deepEqual(compareBundles(base, ordered(['e', 'd', 'c', 'b', 'a'])).reordered.length, 4);
 });
