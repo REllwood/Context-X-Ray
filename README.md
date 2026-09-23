@@ -33,7 +33,7 @@ cd Context-X-Ray
 npm start
 ```
 
-Open http://127.0.0.1:4182 to use the viewer.
+Open http://127.0.0.1:4182 to use the viewer. To use another port, run `npm start -- --port 5000` or set `PORT`.
 
 Or run a report from the command line:
 
@@ -50,7 +50,7 @@ v0.1 works on exported bundles. Next up are live instrumentation for agent hosts
 ## Development
 
 ```sh
-npm test        # analysis tests
+npm test        # analysis, CLI, server and viewer-state tests
 npm run check   # tests plus syntax checks
 ```
 
