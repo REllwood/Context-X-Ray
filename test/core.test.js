@@ -4,6 +4,8 @@ import {
   analyseBundle,
   compareBundles,
   exportAnalysis,
+  MAX_REFERENCES,
+  MAX_SEGMENTS,
   measureContent,
   normaliseBundle,
   parseBundle
@@ -104,6 +106,20 @@ test('OpenAI-style tool calls and tool messages are measured and grouped by tool
   assert.deepEqual(analysis.findings.importWarnings, []);
 });
 
+test('long agent transcripts fit within the segment limit, which is still enforced', () => {
+  const messages = [];
+  for (let turn = 0; turn < 120; turn += 1) {
+    messages.push({ role: 'assistant', content: [{ type: 'text', text: `Step ${turn}` }, { type: 'tool_use', id: `t${turn}`, name: 'read_file', input: { path: `f${turn}.js` } }] });
+    messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${turn}`, content: `contents of file ${turn} `.repeat(200) }] });
+  }
+  const analysis = analyseBundle(parseBundle(JSON.stringify({ messages })));
+  assert.equal(analysis.segments.length, 360);
+  assert.throws(
+    () => normaliseBundle({ version: 1, segments: Array.from({ length: MAX_SEGMENTS + 1 }, (_, index) => ({ id: `s${index}` })) }),
+    new RegExp(`limited to ${MAX_SEGMENTS} segments`)
+  );
+});
+
 test('rejects reference overflow rather than silently dropping evidence', () => {
   assert.throws(
     () => normaliseBundle({
@@ -120,9 +136,9 @@ test('rejects reference overflow rather than silently dropping evidence', () => 
     () => normaliseBundle({
       version: 1,
       segments: [{ id: 'segment', content: 'content' }],
-      references: Array.from({ length: 201 }, (_, index) => `file-${index}.js`)
+      references: Array.from({ length: MAX_REFERENCES + 1 }, (_, index) => `file-${index}.js`)
     }),
-    /references.*at most 200/i
+    new RegExp(`references.*at most ${MAX_REFERENCES}`, 'i')
   );
 });
 

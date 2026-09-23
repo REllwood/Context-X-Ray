@@ -1,4 +1,4 @@
-import { analyseBundle, compareBundles, exportAnalysis, parseBundle } from './core.js';
+import { analyseBundle, compareBundles, exportAnalysis, MAX_SOURCE_CHARACTERS, parseBundle } from './core.js';
 
 const fixture = {
   version: 1,
@@ -422,7 +422,10 @@ elements.file.addEventListener('change', async () => {
   activeController = controller;
   setStatus('Loading: reading the explicitly selected bundle', true);
   try {
-    if (file.size > 1_250_000) throw new RangeError('Bundle files are limited to 1,250,000 bytes.');
+    // UTF-8 needs at most three bytes per character, so a larger file cannot fit the limit.
+    if (file.size > MAX_SOURCE_CHARACTERS * 3) {
+      throw new RangeError(`Bundle files are limited to ${MAX_SOURCE_CHARACTERS.toLocaleString('en-AU')} characters.`);
+    }
     const source = await file.text();
     if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
     elements.source.value = source;
