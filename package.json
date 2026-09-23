@@ -1,0 +1,25 @@
+{
+  "name": "context-xray",
+  "version": "0.1.0",
+  "description": "See exactly what occupies an agent's context window before asking the model to use it.",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/REllwood/context-xray.git"
+  },
+  "homepage": "https://github.com/REllwood/context-xray#readme",
+  "bugs": {
+    "url": "https://github.com/REllwood/context-xray/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "cli": "node src/cli.js"
+  }
+}

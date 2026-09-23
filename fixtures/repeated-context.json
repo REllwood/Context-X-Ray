@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "label": "Synthetic coding-agent bundle with repeated source",
+  "references": [
+    {
+      "path": "docs/not-included.md",
+      "fromSegmentId": "task"
+    }
+  ],
+  "segments": [
+    {
+      "id": "task",
+      "role": "user",
+      "source": "conversation:task",
+      "stage": "conversation",
+      "content": "Investigate the synthetic payment retry failure. See docs/not-included.md."
+    },
+    {
+      "id": "source-a",
+      "role": "tool",
+      "source": "src/payment.js",
+      "stage": "repository retrieval",
+      "content": "export async function retryPayment() { return \"synthetic\"; }\n"
+    },
+    {
+      "id": "source-b",
+      "role": "tool",
+      "source": "retrieval:duplicate-payment",
+      "stage": "repository retrieval",
+      "content": "export async function retryPayment() { return \"synthetic\"; }\n"
+    },
+    {
+      "id": "summary-a",
+      "role": "tool",
+      "source": "summary:previous-run",
+      "stage": "summary",
+      "content": "The synthetic payment processor retries a failed charge three times before returning an error to the caller. The payment processor retries a failed charge three times before returning an error."
+    },
+    {
+      "id": "summary-b",
+      "role": "tool",
+      "source": "summary:current-run",
+      "stage": "summary",
+      "content": "The synthetic payment processor retries a failed charge three times before returning an error to the caller. The payment processor retries a failed charge three times before returning a recoverable error."
+    },
+    {
+      "id": "target-truncated",
+      "role": "tool",
+      "source": "src/target.js",
+      "stage": "repository retrieval",
+      "content": "export function target() {\n  // [truncated]\n",
+      "truncated": true
+    }
+  ]
+}

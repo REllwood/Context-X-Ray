@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Measure and inspect an explicitly supplied context bundle locally, without a model call.">
+  <title>Context X-Ray</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div>
+      <p class="overline">Local context radiography</p>
+      <a href="#bundle-source">Context X-Ray</a>
+    </div>
+    <p>No model calls. No telemetry. Referenced workspace files are never opened.</p>
+    <button id="privacy-button" type="button">Analysis boundary</button>
+  </header>
+  <main>
+    <aside class="import-rail" aria-labelledby="import-title">
+      <p class="stage">Input plane</p>
+      <h1 id="import-title">Context bundle</h1>
+      <label for="bundle-source">Bundle or messages JSON</label>
+      <textarea id="bundle-source" rows="17" spellcheck="false" placeholder='{"version":1,"segments":[]}'></textarea>
+      <div class="rail-actions">
+        <button id="analyse-button" class="primary" type="button">Analyse included content</button>
+        <button id="fixture-button" type="button">Load synthetic bundle</button>
+      </div>
+      <label for="bundle-file">Choose an explicit local bundle</label>
+      <input id="bundle-file" type="file" accept="application/json,.json">
+      <label class="check"><input id="include-excerpts" type="checkbox"> Include 500-character excerpts in exports</label>
+      <div id="job-status" class="job-status" role="status">No bundle analysed.</div>
+      <button id="cancel-job" type="button" hidden>Cancel current analysis</button>
+      <div class="compare-control">
+        <p class="stage">Comparison plane</p>
+        <button id="compare-button" type="button" disabled>Compare with another bundle</button>
+      </div>
+    </aside>
+
+    <section class="viewer">
+      <div id="empty-state" class="empty-state">
+        <p class="stage">What occupies the window?</p>
+        <h2>Measure the assembly, then inspect the evidence.</h2>
+        <p>Only strings present in the imported bundle enter this page. A path mentioned by the bundle remains a path label.</p>
+      </div>
+      <div id="analysis" hidden>
+        <section class="budget-header" aria-labelledby="analysis-title">
+          <div>
+            <p class="stage">Complete local analysis</p>
+            <h2 id="analysis-title">Untitled context bundle</h2>
+          </div>
+          <dl id="totals"></dl>
+          <button id="export-button" type="button">Export measurements</button>
+        </section>
+        <p id="estimate-label" class="estimate-label"></p>
+        <section class="budget-map" aria-labelledby="budget-title">
+          <div class="section-heading"><h3 id="budget-title">Source budget</h3><p>Share of labelled estimated tokens</p></div>
+          <ol id="source-bars"></ol>
+        </section>
+        <div class="viewer-columns">
+          <section aria-labelledby="transcript-title">
+            <div class="section-heading"><h3 id="transcript-title">Ordered transcript</h3><p>Assembly position and provenance</p></div>
+            <ol id="segments" class="segments"></ol>
+          </section>
+          <aside aria-labelledby="findings-title">
+            <div class="section-heading"><h3 id="findings-title">Evidence</h3><p>Measurements, not relevance judgements</p></div>
+            <div id="findings"></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="work-dialog">
+    <form method="dialog"><button value="close">Close</button></form>
+    <div id="dialog-job-status" class="job-status" role="status" hidden></div>
+    <button id="dialog-cancel-job" type="button" hidden>Cancel current work</button>
+    <div id="dialog-content"></div>
+  </dialog>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
