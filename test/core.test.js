@@ -65,6 +65,40 @@ test('rejects reference overflow rather than silently dropping evidence', () => 
   );
 });
 
+test('parsed bundles are analysed once, so parse-then-analyse keeps every reference and warning', () => {
+  const references = (prefix) => Array.from({ length: 50 }, (_, index) => `${prefix}-${index}.js`);
+  const manyReferences = {
+    version: 1,
+    segments: ['a', 'b', 'c'].map((id) => ({ id, content: id, references: references(id) }))
+  };
+  const analysed = analyseBundle(parseBundle(JSON.stringify(manyReferences)));
+  assert.equal(analysed.findings.unresolvedReferences.length, 150);
+
+  const saved = JSON.stringify(normaliseBundle(manyReferences));
+  assert.equal(analyseBundle(parseBundle(saved)).findings.unresolvedReferences.length, 150);
+
+  const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const messages = Array.from({ length: 120 }, (_, index) => ({ role: 'user', content: [{ type: 'text', text: `turn ${index}` }, image, image] }));
+  const parsed = parseBundle(JSON.stringify({ messages }));
+  const analysis = analyseBundle(parsed);
+  assert.equal(analysis.adapter, 'chat messages export');
+  assert.deepEqual(analysis.findings.importWarnings, parsed.importWarnings);
+});
+
+test('normalised bundles are frozen and caller-supplied adapter labels are not trusted', () => {
+  const normalised = normaliseBundle(bundle);
+  assert.equal(Object.isFrozen(normalised.segments[0]), true);
+  assert.throws(() => normalised.segments.push({}), TypeError);
+  const spoofed = analyseBundle({
+    ...bundle,
+    tokeniser: 'estimate:utf8-bytes-divided-by-4:v1',
+    adapter: 'invented adapter',
+    importWarnings: ['invented warning']
+  });
+  assert.equal(spoofed.adapter, 'context-xray bundle v1');
+  assert.deepEqual(spoofed.findings.importWarnings, []);
+});
+
 test('exact and near duplicate evidence links exact segment identifiers', () => {
   const analysis = analyseBundle(bundle);
   assert.deepEqual(analysis.findings.exactDuplicates[0].segmentIds, ['copy-a', 'copy-b']);
