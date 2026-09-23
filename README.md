@@ -14,7 +14,7 @@ When a coding agent gives a bad answer, the cause is often what went into its co
 
 ## What it does
 
-- Imports a provider-neutral context bundle or a common message export
+- Imports a provider-neutral context bundle, or an Anthropic- or OpenAI-style message export, including tool calls and tool results
 - Measures characters, bytes and estimated tokens for every source
 - Finds exact and near duplicates, and links them to the segments involved
 - Flags truncation, unresolved references, oversized generated files and likely secrets
