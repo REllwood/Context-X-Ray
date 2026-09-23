@@ -60,6 +60,11 @@ function blockText(content, skipped) {
   return parts.join('\n\n');
 }
 
+function unmeasuredWarning(label, skipped) {
+  const counts = [...skipped].map(([type, count]) => `${count} ${type}${count === 1 ? '' : 's'}`);
+  return `${label} has content that was not measured and is represented by metadata only: ${counts.join(', ')}.`;
+}
+
 // Adapts one exported message into segments: its text, plus one segment for each tool call
 // and tool result, so tool traffic is measured and grouped by tool name. Reasoning blocks,
 // images and other non-text blocks are counted in an import warning but not measured.
@@ -129,10 +134,7 @@ function messageCandidates(message, index, warnings, toolNames) {
       transformation: isToolMessage ? 'adapted from tool message' : 'adapted from message export'
     });
   }
-  if (skipped.size) {
-    const counts = [...skipped].map(([type, count]) => `${count} ${type}${count === 1 ? '' : 's'}`);
-    warnings.push(`Message ${index + 1} has content that was not measured and is represented by metadata only: ${counts.join(', ')}.`);
-  }
+  if (skipped.size) warnings.push(unmeasuredWarning(`Message ${index + 1}`, skipped));
   return [...candidates, ...toolSegments];
 }
 
@@ -168,10 +170,25 @@ export function normaliseBundle(value) {
     adapter = 'context-xray bundle v1';
     segments = value.segments.map(segmentFromValue);
   } else if (Array.isArray(value.messages)) {
-    adapter = typeof value.system === 'string' ? 'system-plus-messages export' : 'chat messages export';
-    const candidates = typeof value.system === 'string'
-      ? [{ id: 'system-1', role: 'system', source: 'system', stage: 'instructions', content: value.system, transformation: 'adapted from system field' }]
-      : [];
+    // The system prompt may be a string or, in Anthropic-style exports, a list of content blocks.
+    const hasSystem = typeof value.system === 'string' || Array.isArray(value.system);
+    adapter = hasSystem ? 'system-plus-messages export' : 'chat messages export';
+    const candidates = [];
+    if (value.system != null) {
+      const skipped = new Map();
+      const content = blockText(value.system, skipped);
+      if (hasSystem) {
+        candidates.push({
+          id: 'system-1',
+          role: 'system',
+          source: 'system',
+          stage: 'instructions',
+          content,
+          transformation: Array.isArray(value.system) ? 'adapted from system content blocks' : 'adapted from system field'
+        });
+      }
+      if (skipped.size) warnings.push(unmeasuredWarning('The system field', skipped));
+    }
     const toolNames = new Map();
     value.messages.forEach((message, index) => {
       candidates.push(...messageCandidates(message, index, warnings, toolNames));
